@@ -13,6 +13,7 @@ import random
 from torch.utils.data import DataLoader
 import wandb
 import sys
+import json
 
 
 #Local imports
@@ -108,39 +109,13 @@ def main(args):
                 args.clip_len, overlap_len = args.clip_len // 2,
                 stride = stride, dataset = args.dataset)
 
-            # Add these debug prints
-            print("\nDebug: Dataset Details")
-            print(f"Clip length: {args.clip_len}")
-            print(f"Modality: {args.modality}")
-            print(f"Dataset: {args.dataset}")
-            
-            # Debug first sample frame loading
-            sample = split_data[0]
-            video_path = os.path.join(args.frame_dir, sample['video'])
-            print("\nDebug: Frame Loading")
-            frame_files = sorted(os.listdir(video_path))
-            print(f"Number of frames in directory: {len(frame_files)}")
-            print(f"First few frames: {frame_files[:5]}")
-            print(f"Last few frames: {frame_files[-5:]}")
-            print(f"Sample start frame: {sample['start']}")
-            print(f"Sample frame index: {sample['frame']}")
-            
-            # Debug frame number extraction
-            frame_numbers = [int(f.replace('frame', '').replace('.jpg', '')) for f in frame_files[:5]]
-            print(f"Frame numbers: {frame_numbers}")
-            
             pred_file = None
             if args.save_dir is not None:
                 pred_file = os.path.join(
                     args.save_dir, 'pred-{}'.format(split))
 
-            print("Debug: First batch shape check")
-            first_batch = next(iter(DataLoader(split_data, batch_size=1)))
-            print("Clip shape:", first_batch['frame'].shape)
-            print("Labels shape:", first_batch['label'].shape if 'label' in first_batch else "No labels")
-
             mAPs, tolerances = evaluate(model, split_data, split.upper(), classes, pred_file, printed = True, 
-                        test = True, augment = (args.dataset != 'soccernet') & (args.dataset != 'soccernetball'))
+                        test = True, augment = False)
             
             if split != 'challenge':
                 for i in range(len(mAPs)):
@@ -148,9 +123,31 @@ def main(args):
                     wandb.summary['test/mAP@' + str(tolerances[i])] = mAPs[i]
 
                 if args.dataset == 'soccernet':
-                    results = evaluate_SN(LABELS_SN_PATH, '/'.join(pred_file.split('/')[:-1]) + '/preds', 
-                                split = split, prediction_file = "results_spotting.json", version = 2, 
-                                metric = "tight")
+
+                    with open(pred_file + ".json", 'r') as f:
+                        preds = json.load(f)
+
+                    predictions_path = "/".join(pred_file.split('/')[:-1])
+
+                    for pred in preds:
+                        print("video: ", pred['video'])
+                        print("length of events: ", len(pred["events"]))
+                        
+                        # Create full directory path including all subdirectories
+                        full_pred_path = os.path.join(predictions_path, pred['video']).replace("/half1", "").replace("/half2", "")
+                        os.makedirs(full_pred_path, exist_ok=True)
+                        
+                        # Save the results file
+                        results_path = os.path.join(full_pred_path, "results_spotting.json")
+                        with open(results_path, 'w') as f:
+                            json.dump(pred["events"], f)
+                        print(f"Saved results to: {results_path}")  # Add debug print
+
+                    results = evaluate_SN(
+                        LABELS_SN_PATH, predictions_path, 
+                        split = split, prediction_file = "results_spotting.json", version = 2, 
+                        metric = "tight"
+                    )
 
                     print('Tight aMAP: ', results['a_mAP'] * 100)
                     print('Tight aMAP per class: ', results['a_mAP_per_class'])
@@ -161,21 +158,7 @@ def main(args):
                     for j in range(len(classes)):
                         wandb.log({'test/classes/mAP@' + list(classes.keys())[j]: results['a_mAP_per_class'][j] * 100})
 
-                if args.dataset == 'soccernetball':
-                    results = evaluate_SNB(LABELS_SNB_PATH, '/'.join(pred_file.split('/')[:-1]) + '/preds', split = split)
-                    
-                    print('aMAP@1: ', results['a_mAP'] * 100)
-                    print('Average mAP per class: ')
-                    print('-----------------------------------')
-                    for i in range(len(results["a_mAP_per_class"])):
-                        print("    " + list(classes.keys())[i] + ": " + str(np.round(results["a_mAP_per_class"][i] * 100, 2)))
-
-                    wandb.log({'test/mAP@1': results['a_mAP'] * 100})
-                    wandb.summary['test/mAP@1'] = results['a_mAP'] * 100
-
-                    for j in range(len(classes)):
-                        wandb.log({'test/classes/mAP@' + list(classes.keys())[j]: results['a_mAP_per_class'][j] * 100})
-
+                
 
     
     print('CORRECTLY FINISHED INFERENCE')
