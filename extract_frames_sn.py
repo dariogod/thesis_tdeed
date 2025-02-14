@@ -18,6 +18,9 @@ python extract_frames_sn.py --video_dir video_dir
         --out_dir out_dir
         --sample_fps 12.5 --num_workers 4
 
+
+for my usecase: python3 extract_frames_sn.py --video_dir soccernet/videos --out_dir soccernet/frames --sample_fps 12.5 --num_workers 4
+
 Extracted frames with a resolution of 796x448 with a sample fps of 12.5 take approximately 7.5G per game.
 Extracted frames with a resolution of 398x224 with a sample fps of 12.5 take approximately 1.1T.
 '''
