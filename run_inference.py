@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-File containing the main training script for T-DEED.
+File to run inference on the SoccerNet Action Spotting data
 """
 
 #Standard imports
@@ -20,7 +20,7 @@ import json
 from util.io import load_json, load_text
 from util.dataset import load_classes
 from model.model import TDEEDModel
-from util.eval import evaluate, evaluate_SNB
+from util.eval import evaluate
 from SoccerNet.Evaluation.ActionSpotting import evaluate as evaluate_SN
 from dataset.frame import ActionSpotVideoDataset
 
@@ -28,6 +28,7 @@ from dataset.frame import ActionSpotVideoDataset
 #Constants
 EVAL_SPLITS = ['test']
 STRIDE_SN = 12
+
 def update_args(args, config):
     args.frame_dir = config['frame_dir']
     args.save_dir = config['save_dir'] + '/' + args.model # + '-' + str(args.seed) -> in case multiple seeds
@@ -158,12 +159,7 @@ def main(args):
                     for j in range(len(classes)):
                         wandb.log({'test/classes/mAP@' + list(classes.keys())[j]: results['a_mAP_per_class'][j] * 100})
 
-                
-
-    
     print('CORRECTLY FINISHED INFERENCE')
-
-
 
 
 if __name__ == '__main__':

@@ -44,3 +44,4 @@ typing_extensions==4.12.2
 urllib3==2.2.1
 wandb==0.19.6
 SoccerNet==0.1.62
+moviepy==1.0.3 # old version because it needs moviepy.editor
