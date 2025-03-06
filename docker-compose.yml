@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  tdeed-evaluator:
+    build: .
+    env_file: .env
+    volumes:
+      - .:/app  # Mount current directory to /app
+    # add shared memory size: RuntimeError: DataLoader worker (pid 64) is killed by signal: Bus error. It is possible that dataloader's workers are out of shared memory. Please try to raise your shared memory limit.
+    shm_size: '8gb'
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu] 
