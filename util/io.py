@@ -67,7 +67,7 @@ def store_json_snb(pred_path, pred, stride = 1):
         with open(path + '/results_spotting.json', 'w') as fp:
             json.dump(gameDict, fp, indent=4)
 
-def load_text(fpath):
+def load_text(fpath: str) -> list[str]:
     lines = []
     with open(fpath, 'r') as fp:
         for l in fp:

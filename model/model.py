@@ -13,6 +13,7 @@ import random
 import torch.nn.functional as F
 import math
 
+from config.config import Config
 
 #Local imports
 from model.modules import BaseRGBModel, EDSGPMIXERLayers, FCLayers, FC2Layers, step, process_prediction, process_double_head, process_labels
@@ -22,16 +23,20 @@ class TDEEDModel(BaseRGBModel):
 
     class Impl(nn.Module):
 
-        def __init__(self, args = None):
+        def __init__(self, config: Config):
             super().__init__()
-            self._modality = args.modality
+            self._modality = config.modality
             assert self._modality == 'rgb', 'Only RGB supported for now'
             in_channels = {'rgb': 3}[self._modality]
-            self._temp_arch = args.temporal_arch
+
+            self._temp_arch = config.temporal_arch
             assert self._temp_arch in ['ed_sgp_mixer'], 'Only ed_sgp_mixer supported for now'
-            self._radi_displacement = args.radi_displacement
-            self._feature_arch = args.feature_arch
+
+            self._radi_displacement = config.radi_displacement
+
+            self._feature_arch = config.feature_arch
             assert 'rny' in self._feature_arch, 'Only rny supported for now'
+
             self._double_head = False
 
             if self._feature_arch.startswith(('rny002', 'rny008')):
@@ -46,27 +51,27 @@ class TDEEDModel(BaseRGBModel):
                 self._d = feat_dim
 
             else:
-                raise NotImplementedError(args._feature_arch)
+                raise NotImplementedError(config.feature_arch)
 
             # Add Temporal Shift Modules
             self._require_clip_len = -1
             if self._feature_arch.endswith('_gsm'):
-                make_temporal_shift(features, args.clip_len, mode='gsm')
-                self._require_clip_len = args.clip_len
+                make_temporal_shift(features, config.clip_len, mode='gsm')
+                self._require_clip_len = config.clip_len
             elif self._feature_arch.endswith('_gsf'):
-                make_temporal_shift(features, args.clip_len, mode='gsf')
-                self._require_clip_len = args.clip_len
+                make_temporal_shift(features, config.clip_len, mode='gsf')
+                self._require_clip_len = config.clip_len
 
             self._features = features
             self._feat_dim = self._d
             feat_dim = self._d
 
             #Positional encoding
-            self.temp_enc = nn.Parameter(torch.normal(mean = 0, std = 1 / args.clip_len, size = (args.clip_len, self._d)))
+            self.temp_enc = nn.Parameter(torch.normal(mean = 0, std = 1 / config.clip_len, size = (config.clip_len, self._d)))
             
             if self._temp_arch == 'ed_sgp_mixer':
-                self._temp_fine = EDSGPMIXERLayers(feat_dim, args.clip_len, num_layers=args.n_layers, ks = args.sgp_ks, k = args.sgp_r, concat = True)
-                self._pred_fine = FCLayers(self._feat_dim, args.num_classes+1)
+                self._temp_fine = EDSGPMIXERLayers(feat_dim, config.clip_len, num_layers=config.n_layers, ks = config.sgp_ks, k = config.sgp_r, concat = True)
+                self._pred_fine = FCLayers(self._feat_dim, config.num_classes+1)
             else:
                 raise NotImplementedError(self._temp_arch)
             
@@ -94,7 +99,7 @@ class TDEEDModel(BaseRGBModel):
             ])
 
             #Croping in case of using it
-            self.croping = args.crop_dim
+            self.croping = config.crop_dim
             if self.croping != None:
                 self.cropT = T.RandomCrop((self.croping, self.croping))
                 self.cropI = T.CenterCrop((self.croping, self.croping))
@@ -181,14 +186,14 @@ class TDEEDModel(BaseRGBModel):
             print('  Head:',
                 sum(p.numel() for p in self._pred_fine.parameters()))
 
-    def __init__(self, device='cuda', args=None):
+    def __init__(self, device, config: Config):
         self.device = device
-        self._model = TDEEDModel.Impl(args=args)
+        self._config = config
+        self._model = TDEEDModel.Impl(config=config)
         self._model.print_stats()
-        self._args = args
 
         self._model.to(device)
-        self._num_classes = args.num_classes + 1
+        self._num_classes = config.num_classes + 1
 
     def epoch(self, loader, optimizer=None, scaler=None, lr_scheduler=None,
             acc_grad_iter=1, fg_weight=5, valMAP=False):
@@ -220,7 +225,7 @@ class TDEEDModel(BaseRGBModel):
                 #update labels for double head
                 if self._model._double_head:
                     batch_dataset = batch['dataset']
-                    label = update_labels_2heads(label, batch_dataset, self._args.num_classes)
+                    label = update_labels_2heads(label, batch_dataset, self._config.num_classes)
 
                 if 'labelD' in batch.keys():
                     labelD = batch['labelD'].to(self.device).float()
@@ -285,25 +290,25 @@ class TDEEDModel(BaseRGBModel):
                         for i in range(pred.shape[0]):
                             if batch_dataset[i] == 1:
                                 if len(label.shape) == 3:
-                                    aux_label = label[i][:, :self._args.num_classes+1]
+                                    aux_label = label[i][:, : self._config.num_classes + 1]
                                 elif len(label.shape) == 2:
                                     aux_label = label[i]
                                 else:
                                     raise NotImplementedError
                                     
-                                loss += F.cross_entropy(pred[i][:, :self._args.num_classes+1], aux_label,
-                                                        weight = ce_kwargs['weight'][:self._args.num_classes+1]) / (pred.shape[0])
+                                loss += F.cross_entropy(pred[i][:, :self._config.num_classes+1], aux_label,
+                                                        weight = ce_kwargs['weight'][:self._config.num_classes+1]) / (pred.shape[0])
                                     
                             elif batch_dataset[i] == 2:
                                 if len(label.shape) == 3:
-                                    aux_label = label[i][:, self._args.num_classes+1:]
+                                    aux_label = label[i][:, self._config.num_classes+1:]
                                 elif len(label.shape) == 2:
-                                    aux_label = label[i] - (self._args.num_classes + 1)
+                                    aux_label = label[i] - (self._config.num_classes + 1)
                                 else:
                                     raise NotImplementedError
                                     
-                                loss += F.cross_entropy(pred[i][:, self._args.num_classes+1:], aux_label,
-                                                        weight = ce_kwargs['weight'][:self._args.pretrain['num_classes']+1]) / (pred.shape[0])
+                                loss += F.cross_entropy(pred[i][:, self._config.num_classes+1:], aux_label,
+                                                        weight = ce_kwargs['weight'][:self._config.num_classes+1]) / (pred.shape[0])
 
                     else:
                         predictions = pred.reshape(-1, self._num_classes)
@@ -353,7 +358,7 @@ class TDEEDModel(BaseRGBModel):
                 if isinstance(predD, list):
                     predD = predD[0]
                 if self._model._double_head:
-                    pred = process_double_head(pred, predD, num_classes = self._args.num_classes+1)
+                    pred = process_double_head(pred, predD, num_classes = self._config.num_classes+1)
                 else:
                     pred = process_prediction(pred, predD)
                 pred_cls = torch.argmax(pred, axis=2)

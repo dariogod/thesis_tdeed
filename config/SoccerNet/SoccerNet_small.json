@@ -5,7 +5,7 @@
     "store_mode": "store",
     "batch_size": 8,
     "clip_len": 100,
-    "crop_dim": -1,
+    "crop_dim": null,
     "dataset": "soccernet",
     "radi_displacement": 3,
     "epoch_num_frames": 500000,

@@ -1,4 +1,5 @@
 import os
+from typing import Dict
 
 from util.io import load_text
 
@@ -14,7 +15,7 @@ DATASETS = [
 ]
 
 
-def load_classes(file_name):
+def load_classes(file_name: str) -> Dict[str, int]:
     return {x: i + 1 for i, x in enumerate(load_text(file_name))}
 
 def read_fps(video_frame_dir):

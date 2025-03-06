@@ -11,7 +11,7 @@ class Config(BaseModel):
     # Training parameters
     batch_size: int  # Batch size for training
     clip_len: int  # Length of the clips in number of frames
-    crop_dim: int  # Dimension to crop the frames (if needed)
+    crop_dim: int | None  # Dimension to crop the frames (if needed)
     dataset: str  # Name of the dataset ('finediving', 'fs_comp', 'fs_perf', or 'soccernet')
     radi_displacement: int  # Radius of displacement used
     epoch_num_frames: int  # Number of frames used per epoch

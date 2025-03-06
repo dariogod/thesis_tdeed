@@ -15,8 +15,8 @@ import wandb
 import sys
 import json
 
-
 #Local imports
+from config.config import Config
 from util.io import load_json, load_text
 from util.dataset import load_classes
 from model.model import TDEEDModel
@@ -29,91 +29,53 @@ from dataset.frame import ActionSpotVideoDataset
 EVAL_SPLITS = ['test']
 STRIDE_SN = 12
 
-def update_args(args, config):
-    args.frame_dir = config['frame_dir']
-    args.save_dir = config['save_dir'] + '/' + args.model # + '-' + str(args.seed) -> in case multiple seeds
-    args.store_dir = config['store_dir']
-    args.store_mode = config['store_mode']
-    args.batch_size = config['batch_size']
-    args.clip_len = config['clip_len']
-    args.crop_dim = config['crop_dim']
-    args.dataset = config['dataset']
-    args.radi_displacement = config['radi_displacement']
-    args.epoch_num_frames = config['epoch_num_frames']
-    args.feature_arch = config['feature_arch']
-    args.learning_rate = config['learning_rate']
-    args.mixup = config['mixup']
-    args.modality = config['modality']
-    args.num_classes = config['num_classes']
-    args.num_epochs = config['num_epochs']
-    args.warm_up_epochs = config['warm_up_epochs']
-    args.start_val_epoch = config['start_val_epoch']
-    args.temporal_arch = config['temporal_arch']
-    args.n_layers = config['n_layers']
-    args.sgp_ks = config['sgp_ks']
-    args.sgp_r = config['sgp_r']
-    args.only_test = config['only_test']
-    args.criterion = config['criterion']
-    args.num_workers = config['num_workers']
-    if 'pretrain' in config:
-        args.pretrain = config['pretrain']
-    else:
-        args.pretrain = None
 
-    return args
+def main(*, model: str, acc_grad_iter: int = 1, seed: int = 1):
 
-def main(args):
-    #Set seed
     initial_time = time.time()
-    print('Setting seed to: ', args.seed)
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
-    random.seed(args.seed)
 
-    config_path = args.model.split('_')[0] + '/' + args.model + '.json'
+    #Set seed
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+
+    # Load config
+    config_path = model.split('_')[0] + '/' + model + '.json'
     config = load_json(os.path.join('config', config_path))
-    args = update_args(args, config)
+    config = Config.model_validate(config)
+    config.save_dir = config.save_dir + '/' + model
 
+    LABELS_SN_PATH = load_text(os.path.join('data', config.dataset, 'labels_path.txt'))[0]
 
-    LABELS_SN_PATH = load_text(os.path.join('data', args.dataset, 'labels_path.txt'))[0]
-    global LABELS_SNB_PATH
-
-    assert args.batch_size % args.acc_grad_iter == 0
-    if args.crop_dim <= 0:
-        args.crop_dim = None
+    assert config.batch_size % acc_grad_iter == 0
 
     # initialize wandb
     wandb.login()
-    wandb.init(config = args, dir = args.save_dir + '/wandb_logs', project = 'ExtendTDEED', name = args.model + '-' + str(args.seed))
+    wandb.init(config = config, dir = config.save_dir + '/wandb_logs', project = 'ExtendTDEED', name = model + '-' + str(seed))
     
-    classes = load_classes(os.path.join('data', args.dataset, 'class.txt'))
+    classes = load_classes(os.path.join('data', config.dataset, 'class.txt'))
 
     # Model
-    model = TDEEDModel(args=args)
-
+    model = TDEEDModel(device='cuda', config=config)
 
     print('START INFERENCE')
     model.load(torch.load(os.path.join(
-        os.getcwd(), 'checkpoints', args.model.split('_')[0], args.model, 'checkpoint_best.pt')))
+        os.getcwd(), 'checkpoints', config.model.split('_')[0], config.model, 'checkpoint_best.pt')))
 
-    eval_splits = EVAL_SPLITS
-
-    for split in eval_splits:
+    for split in EVAL_SPLITS:
         split_path = os.path.join(
-            'data', args.dataset, '{}.json'.format(split))
-
-        stride = STRIDE_SN
+            'data', config.dataset, '{}.json'.format(split))
 
         if os.path.exists(split_path):
             split_data = ActionSpotVideoDataset(
-                classes, split_path, args.frame_dir, args.modality,
-                args.clip_len, overlap_len = args.clip_len // 2,
-                stride = stride, dataset = args.dataset)
+                classes, split_path, config.frame_dir, config.modality,
+                config.clip_len, overlap_len = config.clip_len // 2,
+                stride = STRIDE_SN, dataset = config.dataset)
 
             pred_file = None
-            if args.save_dir is not None:
+            if config.save_dir is not None:
                 pred_file = os.path.join(
-                    args.save_dir, 'pred-{}'.format(split))
+                    config.save_dir, 'pred-{}'.format(split))
 
             mAPs, tolerances = evaluate(model, split_data, split.upper(), classes, pred_file, printed = True, 
                         test = True, augment = False)
@@ -123,7 +85,7 @@ def main(args):
                     wandb.log({'test/mAP@' + str(tolerances[i]): mAPs[i]})
                     wandb.summary['test/mAP@' + str(tolerances[i])] = mAPs[i]
 
-                if args.dataset == 'soccernet':
+                if config.dataset == 'soccernet':
 
                     with open(pred_file + ".json", 'r') as f:
                         preds = json.load(f)
@@ -165,9 +127,12 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, required=True)
-    parser.add_argument('-ag', '--acc_grad_iter', type=int, default=1,
-                        help='Use gradient accumulation')
+    parser.add_argument('-ag', '--acc_grad_iter', type=int, default=1, help='Use gradient accumulation')
     parser.add_argument('--seed', type=int, default=1)
     args = parser.parse_args()
 
-    main(args)
+    main(
+        model=args.model,
+        acc_grad_iter=args.acc_grad_iter,
+        seed=args.seed
+    )
